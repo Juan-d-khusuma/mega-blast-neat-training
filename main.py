@@ -1,32 +1,29 @@
-from pygame.constants import K_RSHIFT, KEYDOWN, KEYUP, K_DOWN, K_ESCAPE, K_LEFT, K_RIGHT, K_UP, K_a, K_d, K_f, K_g, K_h, K_i, K_j, K_k, K_l, K_q, K_r, K_s, K_t, K_u, K_w
+from objects.entity import Explosion, Wall
 from objects.game import Game
-from objects.cursor import Cursor
 from objects.map import MapFactory, MapRenderer
+from objects.player import Player
+from objects.stopwatch import Stopwatch
 from objects.text import Text
-from pygame import init, display, event, QUIT, mixer, mouse, quit, time, draw, mixer
-import sys
-import time as TIME
+from pygame import init, display, event, QUIT, mixer, mouse, quit, time, mixer
+import sys, os, neat, gym, random, pickle, multiprocessing
+
+# env = gym.make("Bomberman-v0")
+
 mapFactory = MapFactory()
 init()
 mixer.init()
 
 display.set_caption("Mega Blast")
 clock = time.Clock()
-mapRenderer = MapRenderer()
-
-start = False
-open_option = False
-open_quit_option = False
-open_option_input_prompt  = False
-round_over = False
 round = 1
 
-wins = {
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-}
+timer = Stopwatch()
+
+target_player = Player(
+    (19 * Game.settings["game.tileSize"] + Game.x_offset), 
+    (19 * Game.settings["game.tileSize"] + Game.y_offset), 
+    Game.settings["game.playerSpeed"], 999
+)
 
 player_count_options = [x + 1 for x in range(4)]
 bot_count_options = [x for x in range(4)]
@@ -37,461 +34,120 @@ win_limit_selected = Game.gameConf["game.win.limit"]
 
 round_winner = None
 
-def main_menu():
-    global start, open_option, open_quit_option
-    Text("Mega Blast!", size="xl", fg="white", bg="black", align="top-center")
-    play_txt = Text("Play", size="l", fg="white", bg="black", align="mid-center", display=False)
-    play_txt.y -= 60
-    if cursor.hovered_text(play_txt):
-        play_txt = Text("Play", size="l", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        play_txt.y -= 60
-        if mouse.get_pressed()[0]:
-            start = True
-            TIME.sleep(0.3)
-    Game.surface.blit(play_txt.text, (play_txt.x, play_txt.y))
+def main(genomes, config):  # sourcery no-metrics
 
-    option_txt = Text("Options", size="l", fg="white", bg="black", align="mid-center")
-    if cursor.hovered_text(option_txt):
-        option_txt = Text("Options", size="l", fg=[150, 150, 150], bg="black", align="mid-center")
-        if mouse.get_pressed()[0]:
-            open_option = True
-            TIME.sleep(0.3)
+    """ INPUTS:
+    - distance to nearest player
+    - distance to nearest enemy
+    - 5 surrounding tiles
+    
+    """
+    Game.players = []
+    j = 5
+    for i, (_, genome) in enumerate(genomes, start=1):
+        genome.fitness = 0
+        while not Game.map["map"][i][j] == "e":
+            if j < Game.map_width - 1:
+                j += 1
+            else:
+                j = 1
+                i += 1
+        player = Player(
+            (i * Game.settings["game.tileSize"] + Game.x_offset), 
+            (j * Game.settings["game.tileSize"] + Game.y_offset), 
+            Game.settings["game.playerSpeed"], i
+        )
+        j += 1
+        player.is_bot = True
+        Game.players.append(player)
+        Game.genomes.append(genome)
+        Game.networks.append(neat.nn.FeedForwardNetwork.create(genome, config))
 
-    quit_txt = Text("Quit", size="l", fg="white", bg="black", align="mid-center", display=False)
-    quit_txt.y += 60
-    if cursor.hovered_text(quit_txt):
-        quit_txt = Text("Quit", size="l", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        quit_txt.y += 60
-        if mouse.get_pressed()[0]:
-            open_quit_option = True
-            TIME.sleep(0.3)
-    Game.surface.blit(quit_txt.text, (quit_txt.x, quit_txt.y))
-
-def option_form_prompt():
-    global open_option, open_option_input_prompt, mapFactory, player_count_selected, bot_count_selected, win_limit_selected, round
-    Text("Mega Blast!", size="xl", fg="white", bg="black", align="top-center")
-    warning1 = Text("Changing any value in the option will override", size="s", fg="white", bg="black", align="mid-center", display=False)
-    warning2 = Text("your current game, Proceed?", size="s", fg="white", bg="black", align="mid-center", display=False)
-    warning2.y += warning1.text.get_height()
-    Game.surface.blit(warning1.text, (warning1.x, warning1.y))
-    Game.surface.blit(warning2.text, (warning2.x, warning2.y))
-    yes = Text("Yes", size="s", fg="white", bg="black", align="mid-center", display=False)
-    no = Text("No", size="s", fg="white", bg="black", align="mid-center", display=False)
-    yes.y += warning1.text.get_height() * 2 + 40
-    yes.x -= 50
-    no.y += warning1.text.get_height() * 2 + 40
-    no.x += 50
-
-    if cursor.hovered_text(yes):
-        yes = Text("Yes", size="s", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        yes.y += warning1.text.get_height() * 2 + 40
-        yes.x -= 50
-        if mouse.get_pressed()[0]:
-            open_option = False
-            open_option_input_prompt = False
-            Game.modifyGameData("game-conf", { "game.player.count": player_count_selected, "game.bot.count": bot_count_selected, "game.win.limit": win_limit_selected })
-            mapFactory = MapFactory()
-            mapRenderer.start()
-            TIME.sleep(0.3)
-    if cursor.hovered_text(no):
-        no = Text("No", size="s", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        no.y += warning1.text.get_height() * 2 + 40
-        no.x += 50
-        if mouse.get_pressed()[0]:
-            open_option_input_prompt = False
-            TIME.sleep(0.3)
-
-    Game.surface.blit(yes.text, (yes.x, yes.y))
-    Game.surface.blit(no.text, (no.x, no.y))
-
-def options_menu():  # sourcery no-metrics
-    global open_option_input_prompt, open_option, player_count_options, bot_count_options, win_limit_options, player_count_selected, bot_count_selected, win_limit_selected
-    title = Text("Mega Blast!", size="xl", fg="white", bg="black", align="top-center")
-    back = Text("Return to Main Menu", size="m", fg="red", bg="black", align="top-center", display=False)
-    back.y += title.text.get_height() + 20
-    if cursor.hovered_text(back):
-        back = Text("Return to Main Menu", size="m", fg=[50, 0, 0], bg="black", align="top-center", display=False)
-        back.y += title.text.get_height() + 20
-        if mouse.get_pressed()[0]:
-            open_option = False
-            TIME.sleep(0.3)
-            player_count_selected = Game.gameConf["game.player.count"]
-            bot_count_selected = Game.gameConf["game.bot.count"]
-            win_limit_selected = Game.gameConf["game.win.limit"]
-
-    player_count = Text("Player Amount", size="m", fg="white", bg="black", align="top-center", display=False)
-    player_count.y += title.text.get_height() + back.text.get_height() + 40
-
-    for i, j in enumerate(player_count_options):
-        text = Text(str(j), size="m", fg=[200, 200, 200], bg="black", align="top-center", display=False)
-        text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + 60
-        text.x = text.x + (i - 2)*45
-        if cursor.hovered_text(text):
-            text = Text(str(j), size="m", fg=[150, 150, 150], bg="black", align="top-center", display=False)
-            text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + 60
-            text.x = text.x + (i - 2)*45
-            if mouse.get_pressed()[0]:
-                player_count_selected = j
-                bot_count_selected = 4 - j
-                TIME.sleep(0.3)
-        Game.surface.blit(text.text, (text.x, text.y))
-        if j == player_count_selected:
-            draw.rect(Game.surface, (0, 250, 0), (text.x - 4, text.y - 4, text.text.get_width() + 6, text.text.get_height() + 6), 5)
-
-    bot_count = Text("Bot Amount", size="m", fg="white", bg="black", align="top-center", display=False)
-    bot_count.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + 80
-
-    __text_height = text.text.get_height()
-
-    for i, j in enumerate(bot_count_options):
-        text = Text(str(j), size="m", fg=[200, 200, 200], bg="black", align="top-center", display=False)
-        text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + bot_count.text.get_height() + 100
-        text.x = text.x + (j - 2)*45
-        if cursor.hovered_text(text):
-            text = Text(str(j), size="m", fg=[150, 150, 150], bg="black", align="top-center", display=False)
-            text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + bot_count.text.get_height() + 100
-            text.x = text.x + (j - 2)*45
-            if mouse.get_pressed()[0]:
-                bot_count_selected = j
-                player_count_selected = 4 - j
-                TIME.sleep(0.3)
-        Game.surface.blit(text.text, (text.x, text.y))
-        if j == bot_count_selected:
-            draw.rect(Game.surface, (0, 250, 0), (text.x - 4, text.y - 4, text.text.get_width() + 6, text.text.get_height() + 6), 5)
-
-    win_limit = Text("Win Limit", size="m", fg="white", bg="black", align="top-center", display=False)
-    win_limit.y +=  title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + bot_count.text.get_height() + __text_height + 120
-
-    for i, j in enumerate(win_limit_options):
-        text = Text(str(j), size="m", fg=[200, 200, 200], bg="black", align="top-center", display=False)
-        text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + __text_height + win_limit.text.get_height() + bot_count.text.get_height() + 140
-        text.x = text.x + (j - 5)*45
-        if cursor.hovered_text(text):
-            text = Text(str(j), size="m", fg=[150, 150, 150], bg="black", align="top-center", display=False)
-            text.y += title.text.get_height() + back.text.get_height() + player_count.text.get_height() + text.text.get_height() + __text_height + win_limit.text.get_height() + bot_count.text.get_height() + 140
-            text.x = text.x + (j - 5)*45
-            if mouse.get_pressed()[0]:
-                win_limit_selected = j
-                TIME.sleep(0.3)
-        Game.surface.blit(text.text, (text.x, text.y))
-        if j == win_limit_selected:
-            draw.rect(Game.surface, (0, 250, 0), (text.x - 4, text.y - 4, text.text.get_width() + 6, text.text.get_height() + 6), 5)
-
-    save = Text("Save Settings", size="m", fg="green", bg="black", align="bottom-center")
-    if cursor.hovered_text(save):
-        save = Text("Save Settings", size="m", fg=[0, 50, 0], bg="black", align="bottom-center")
-        if mouse.get_pressed()[0]:
-            open_option_input_prompt = True
-
-    Game.surface.blit(back.text, (back.x, back.y))
-    Game.surface.blit(player_count.text, (player_count.x, player_count.y))
-    Game.surface.blit(bot_count.text, (bot_count.x, bot_count.y))
-    Game.surface.blit(win_limit.text, (win_limit.x, win_limit.y))
-
-def quit_option_menu():
-    global open_quit_option
-    Text("Mega Blast!", size="xl", fg="white", bg="black", align="top-center")
-    warning1 = Text("Are you sure you want to quit?", size="m", fg="white", bg="black", align="mid-center", display=False)
-    Game.surface.blit(warning1.text, (warning1.x, warning1.y))
-    yes = Text("Yes", size="s", fg="white", bg="black", align="mid-center", display=False)
-    no = Text("No", size="s", fg="white", bg="black", align="mid-center", display=False)
-    yes.y += warning1.text.get_height() * 2 + 40
-    yes.x -= 50
-    no.y += warning1.text.get_height() * 2 + 40
-    no.x += 50
-
-    if cursor.hovered_text(yes):
-        yes = Text("Yes", size="s", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        yes.y += warning1.text.get_height() * 2 + 40
-        yes.x -= 50
-        if mouse.get_pressed()[0]:
-            quit()
-            sys.exit()
-    if cursor.hovered_text(no):
-        no = Text("No", size="s", fg=[150, 150, 150], bg="black", align="mid-center", display=False)
-        no.y += warning1.text.get_height() * 2 + 40
-        no.x += 50
-        if mouse.get_pressed()[0]:
-            open_quit_option = False
-            TIME.sleep(0.3)
-    Game.surface.blit(yes.text, (yes.x, yes.y))
-    Game.surface.blit(no.text, (no.x, no.y))
-
-def main():  # sourcery no-metrics
-    global start, open_option, cursor, open_quit_option, open_option_input_prompt, round_over, round, wins
+    mapRenderer = MapRenderer()
+    global round_over, round
     while True:
-        cursor = Cursor()
+        if timer.time_elapsed() > 30_000 or not Game.players:
+            MapFactory()
+            mapRenderer.start()
+            round += 1
+            timer.reset()
+            break
+
+        for i, player in enumerate(Game.players):
+            if isinstance(player, Player):
+                # Game.genomes[i].fitness += 0.1
+                upper_tile = 1 if isinstance(Game.map_item[Game.change2Dto1DIndex(player.tile_x, player.tile_y-1)], Wall) else 0
+                lower_tile = 1 if isinstance(Game.map_item[Game.change2Dto1DIndex(player.tile_x, player.tile_y+1)], Wall) else 0
+                left_tile = 1 if isinstance(Game.map_item[Game.change2Dto1DIndex(player.tile_x-1, player.tile_y)], Wall) else 0
+                right_tile = 1 if isinstance(Game.map_item[Game.change2Dto1DIndex(player.tile_x+1, player.tile_y)], Wall) else 0
+                target_distance = player.get_distance((target_player.x, target_player.y))
+                Game.genomes[i].fitness += 10/target_distance
+                if target_player.hit_test(target_player.Rect, filter(lambda x: isinstance(x, Explosion), Game.entities)):
+                    Game.genomes[i].fitness += 200
+                    break
+                output = Game.networks[i].activate((
+                    target_player.x,
+                    target_player.y,
+                    player.x, 
+                    player.y, 
+                    *player.get_nearest_player(), 
+                    *player.get_nearest_enemy(),
+                    upper_tile,
+                    lower_tile,
+                    left_tile,
+                    right_tile,
+                    player.get_distance(player.get_nearest_player()),
+                    player.get_distance(player.get_nearest_enemy()),
+                    target_distance,
+                ))
+                player.neat_output = output
+
         for e in event.get():
             if e.type == QUIT:
                 quit()
                 sys.exit()
-            if e.type == KEYDOWN and e.key == K_ESCAPE:
-                start = False
-                open_option = False
-                open_quit_option = False
-                open_option_input_prompt = False
-            for player in Game.players:
-                if not player.is_bot:
-                    if e.type == KEYDOWN:
-                        # UP
-                        if e.key == K_w and player.id == 1:
-                            player.faceUp = True
-                            player.faceDown = False
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_t and player.id == 2:
-                            player.faceDown = False
-                            player.faceUp = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_i and player.id == 3:
-                            player.faceDown = False
-                            player.faceUp = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_UP and player.id == 4:
-                            player.faceDown = False
-                            player.idle = False
-                            player.faceUp = True
-                            player.frame = 0
-
-                        # LEFT
-                        if e.key == K_a and player.id == 1:
-                            player.faceLeft = True
-                            player.faceRight = False
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_f and player.id == 2:
-                            player.faceRight = False
-                            player.faceLeft = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_j and player.id == 3:
-                            player.faceRight = False
-                            player.faceLeft = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_LEFT and player.id == 4:
-                            player.faceRight = False
-                            player.idle = False
-                            player.faceLeft = True
-                            player.frame = 0
-
-                        # DOWN
-                        if e.key == K_s and player.id == 1:
-                            player.faceUp = False
-                            player.faceDown = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_g and player.id == 2:
-                            player.faceUp = False
-                            player.faceDown = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_k and player.id == 3:
-                            player.faceUp = False
-                            player.faceDown = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_DOWN and player.id == 4:
-                            player.faceUp = False
-                            player.idle = False
-                            player.faceDown = True
-                            player.frame = 0
-
-                        # RIGHT
-                        if e.key == K_d and player.id == 1:
-                            player.faceLeft = False
-                            player.faceRight = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_h and player.id == 2:
-                            player.faceLeft = False
-                            player.faceRight = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_l and player.id == 3:
-                            player.faceLeft = False
-                            player.faceRight = True
-                            player.idle = False
-                            player.frame = 0
-
-                        if e.key == K_RIGHT and player.id == 4:
-                            player.faceLeft = False
-                            player.idle = False
-                            player.faceRight = True
-                            player.frame = 0
-
-                        if e.key == K_q and player.id == 1:
-                            player.placeBomb()
-
-                        if e.key == K_r and player.id == 2:
-                            player.placeBomb()
-
-                        if e.key == K_u and player.id == 3:
-                            player.placeBomb()
-
-                        if e.key == K_RSHIFT and player.id == 4:
-                            player.placeBomb()
-                    if e.type == KEYUP:
-                        # UP
-                        if e.key == K_w and player.id == 1:
-                            player.faceUp = False
-                        if e.key == K_t and player.id == 2:
-                            player.faceUp = False
-                        if e.key == K_i and player.id == 3:
-                            player.faceUp = False
-                        if e.key == K_UP and player.id == 4:
-                            player.faceUp = False
-
-                        # LEFT
-                        if e.key == K_a and player.id == 1:
-                            player.faceLeft = False
-                        if e.key == K_f and player.id == 2:
-                            player.faceLeft = False
-                        if e.key == K_j and player.id == 3:
-                            player.faceLeft = False
-                        if e.key == K_LEFT and player.id == 4:
-                            player.faceLeft = False
-
-                        # DOWN
-                        if e.key == K_s and player.id == 1:
-                            player.faceDown = False
-                        if e.key == K_g and player.id == 2:
-                            player.faceDown = False
-                        if e.key == K_k and player.id == 3:
-                            player.faceDown = False
-                        if e.key == K_DOWN and player.id == 4:
-                            player.faceDown = False
-
-                        # RIGHT
-                        if e.key == K_d and player.id == 1:
-                            player.faceRight = False
-                        if e.key == K_h and player.id == 2:
-                            player.faceRight = False
-                        if e.key == K_l and player.id == 3:
-                            player.faceRight = False
-                        if e.key == K_RIGHT and player.id == 4:
-                            player.faceRight = False
-
-                        # STOPPING ANIMATION
-                        if (
-                            player.id == 1
-                            and not player.faceUp
-                            and not player.faceDown
-                            and not player.faceLeft
-                            and not player.faceRight
-                        ):
-                            player.idle = True
-                        if (
-                            player.id == 2
-                            and not player.faceUp
-                            and not player.faceDown
-                            and not player.faceLeft
-                            and not player.faceRight
-                        ):
-                            player.idle = True
-                        if (
-                            player.id == 3
-                            and not player.faceUp
-                            and not player.faceDown
-                            and not player.faceLeft
-                            and not player.faceRight
-                        ):
-                            player.idle = True
-                        if (
-                            player.id == 4
-                            and not player.faceUp
-                            and not player.faceDown
-                            and not player.faceLeft
-                            and not player.faceRight
-                        ):
-                            player.idle = True
 
         Game.surface.fill("black")
-        if start:
-            if len(Game.players) == 1:
-                round_winner = Game.players[0].id
-                wins[round_winner] += 1
-                start = False
-                round_over = True
-            mapRenderer.render()
-            Game.framerate = int(clock.get_fps())
-            Text(str(Game.framerate), size="xl", fg="white", bg="black", align="top-right")
-            back_txt = Text("Back", size="m", fg="white", bg="black", align="top-left")
-            if Cursor().hovered_text(back_txt):
-                back_txt = Text("Back", size="m", fg=[150, 150, 150], bg="black", align="top-left")
-                if mouse.get_pressed()[0]:
-                    start = False
-                    TIME.sleep(0.3)
-            Text("Round {}".format(round), size="xl", fg="white", bg="black", align="top-center")
-    
-        elif open_option_input_prompt:
-            option_form_prompt()
-        elif open_option:
-            options_menu()
-        elif open_quit_option:
-            quit_option_menu()
-        elif round_over:
-            Text("Round {}".format(round), size="xl", fg="white", bg="black", align="top-center")
-            round_over = Text("Round Over, Player {} Wins".format(round_winner), size="m", bg="black", fg="white", align="mid-center")
 
-            player1_wins = Text("Player 1: {}".format(wins[1]), size="m", fg="white", bg="black", align="mid-center", display=False)
-            player2_wins = Text("Player 2: {}".format(wins[2]), size="m", fg="white", bg="black", align="mid-center", display=False)
-            player3_wins = Text("Player 3: {}".format(wins[3]), size="m", fg="white", bg="black", align="mid-center", display=False)
-            player4_wins = Text("Player 4: {}".format(wins[4]), size="m", fg="white", bg="black", align="mid-center", display=False)
-            player1_wins.y += round_over.text.get_height() + 15
-            player2_wins.y += 2 * player1_wins.text.get_height() + 15
-            player3_wins.y += 3 * player2_wins.text.get_height() + 15
-            player4_wins.y += 4 * player3_wins.text.get_height() + 15
-            Game.surface.blit(player1_wins.text, (player1_wins.x, player1_wins.y))
-            Game.surface.blit(player2_wins.text, (player2_wins.x, player2_wins.y))
-            Game.surface.blit(player3_wins.text, (player3_wins.x, player3_wins.y))
-            Game.surface.blit(player4_wins.text, (player4_wins.x, player4_wins.y))
 
-            display.update()
-            TIME.sleep(2)
-            Game.modifyGameData("game-conf", 
-                {
-                    "game.player.count": player_count_selected, 
-                    "game.bot.count": bot_count_selected, 
-                    "game.win.limit": win_limit_selected 
-                }
-            )
-            MapFactory()
-            mapRenderer.start()
-            if round == Game.gameConf["game.win.limit"]:
-                Game.surface.fill((0, 0, 0))
-                Text("The Winner is Player {}".format(max(wins, key=wins.get)), size="xl", fg="white", bg="black", align="mid-center")
-                round = 0
-                start = False
-                display.update()
-                TIME.sleep(5)
-                wins = {
-                    1: 0,
-                    2: 0,
-                    3: 0,
-                    4: 0,
-                }
-            else:
-                start = True    
-            round_over = False
-            round += 1
-        else:
-            main_menu()
+        mapRenderer.render()
+        Game.framerate = int(clock.get_fps())
+        Text(str(Game.framerate), size="xl", fg="white", bg="black", align="top-right")
+        Text("Round {}".format(round), size="xl", fg="white", bg="black", align="top-center")
+        target_player.animate()
         display.update()
         clock.tick(30)
 
+def run(config_file):
+    config = neat.config.Config(
+        neat.DefaultGenome, 
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet, 
+        neat.DefaultStagnation,
+        config_file
+    )
+
+    # Create the population, which is the top-level object for a NEAT run.
+    p = neat.Population(config)
+
+    # Add a stdout reporter to show progress in the terminal.
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+    p.add_reporter(neat.Checkpointer(5))
+
+    # Run for up to 50 generations.
+    # p = neat.Checkpointer.restore_checkpoint("neat-checkpoint-9")
+    winner = p.run(main, 100)   
+    with open("winner", "wb") as x:
+        pickle.dump(winner, x)
+        print("Dumping the last fittest_gene")
+    print(winner)
+
+    # show final stats
+    print('\nBest genome:\n{!s}'.format(winner))
+
 if __name__ == '__main__':
-    main()
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config-feedforward.txt')
+    run(config_path)

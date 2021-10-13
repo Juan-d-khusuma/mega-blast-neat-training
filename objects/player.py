@@ -1,6 +1,4 @@
 import math
-from os import path
-from numpy import tile
 from pygame.transform import scale
 from objects.stopwatch import Stopwatch
 from objects.game import Game
@@ -55,10 +53,11 @@ class Player(AnimateEntity):
         super().__init__(x, y, speed)
         self.prev_tile = [self.tile_x, self.tile_y] 
         self.id = id
-
+        self.neat_output = []
         self.super_bomb_limit = 0
         self.speed_boost_limit = 0
         self.noclip_time_limit = 0
+        self.move_timer = Stopwatch()
 
         self.idle = True
         self.facingUp = False
@@ -70,14 +69,22 @@ class Player(AnimateEntity):
         self.noclip_timer = Stopwatch()
         self.noClip = False 
         self.is_bot = False
-        if len(Game.players) > 0:
-            self.target = random.choice(Game.players)
-        self.idleAnimation = Player.animations[id]["idle"]
-        self.moveAnimation = Player.animations[id]["move"]
+        self.idleAnimation = Player.animations[1]["idle"]
+        self.moveAnimation = Player.animations[1]["move"]
         self.kills = 0
         self.sprite = self.idleAnimation[0]
         self.Rect = Rect(self.x+3, self.y+3, self.sprite.get_width()-3, self.sprite.get_height()-3)
         self.has_bomb = True
+
+    def get_nearest_enemy(self):
+        nearest_enemy_coordinates = (0, 0)
+        nearest_enemy_distance = float("inf")
+        for enemy in Game.enemies:
+            enemy_distance = self.get_distance((enemy.x, enemy.y)) 
+            if enemy_distance < nearest_enemy_distance:
+                nearest_enemy_distance = enemy_distance
+                nearest_enemy_coordinates = (enemy.x, enemy.y)
+        return nearest_enemy_coordinates
 
     def renderIdTag(self):
         if not self.is_bot:
@@ -101,34 +108,62 @@ class Player(AnimateEntity):
             ))
 
     def moveBot(self):
-        if (
-            isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x + 1, self.tile_y)], Box) or
-            isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x - 1, self.tile_y)], Box) or
-            isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x, self.tile_y + 1)], Box) or
-            isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x, self.tile_y - 1)], Box)
-        ): self.placeBomb()
-        else:
-            x, y = self.target.x, self.target.y
-            if x > self.x:
-                self.faceRight = True
-            elif x < self.x:
-                self.faceLeft = True
-            if y > self.y:
-                self.faceUp = True
-            elif y < self.y:
-                self.faceDown = True
-
-            self.move()
-            self.faceUp, self.faceDown, self.faceLeft, self.faceRight = False, False, False, False
-        if math.sqrt((self.x-self.target.x)**2 + (self.y-self.target.y)**2) < 50:
+        if not self.neat_output:
+            return
+        if self.neat_output[0] > 0.5:
+            self.faceUp = True
+        if self.neat_output[1] > 0.5:
+            self.faceDown = True
+        if self.neat_output[2] > 0.5:
+            self.faceRight = True
+        if self.neat_output[3] > 0.5:
+            self.faceLeft = True
+        if self.neat_output[4] > 0.5:
             self.placeBomb()
 
+        if [x for x in Game.map_item if isinstance(x, (Wall, Box)) and self.Rect.colliderect(x.Rect)]:
+            Game.genomes.pop(Game.players.index(self))
+            Game.players.remove(self)
+
+        # if self.faceUp and isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x, self.tile_y - 1)], (Wall, Box)):
+        #     Game.genomes.pop(Game.players.index(self))
+        #     Game.players.remove(self)
+        #     return
+        # if self.faceDown and isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x, self.tile_y + 1)], (Wall, Box)):
+        #     Game.genomes.pop(Game.players.index(self))
+        #     Game.players.remove(self)
+        #     return
+        # if self.faceLeft and isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x - 1, self.tile_y)], (Wall, Box)):
+        #     Game.genomes.pop(Game.players.index(self))
+        #     Game.players.remove(self)
+        #     return
+        # if self.faceRight and isinstance(Game.map_item[Game.change2Dto1DIndex(self.tile_x + 1, self.tile_y)], (Wall, Box)):
+        #     Game.genomes.pop(Game.players.index(self))
+        #     Game.players.remove(self)
+        #     return
+
+        if (not self.faceUp) and (not self.faceDown) and (not self.faceLeft) and (not self.faceRight):
+            Game.genomes[Game.players.index(self)].fitness -= 0.05
+            if self.move_timer.time_elapsed() > 1000:
+                Game.genomes.pop(Game.players.index(self))
+                Game.players.remove(self)
+                return
+        else:
+            self.move_timer.reset()
+                
+        if self.get_distance(self.get_nearest_enemy()) < 50:
+            Game.genomes[Game.players.index(self)].fitness -= 0.1
+            
+
+        self.move()
+        self.faceUp = False
+        self.faceDown = False
+        self.faceLeft = False
+        self.faceRight = False
 
     def animate(self):
         if self.is_bot:
             self.moveBot()
-            if not self.target:
-                self.target = random.choice(Game.players)
         
         # Handle bomb placement
         if self.timer.time_elapsed() > 3_000:
@@ -170,9 +205,10 @@ class Player(AnimateEntity):
                     for player in Game.players:
                         if player.is_bot:
                             player.target = random.choice(Game.players)
-                            while player.target == player:
+                            while player.target == player and len(Game.players) > 1:
                                 player.target = random.choice(Game.players)
                     i.player.kills += 1
+                    Game.genomes[Game.players.index(i)].fitness += 100
                 except:
                     pass
         for enemy in Game.enemies:

@@ -90,6 +90,7 @@ class AnimateEntity(Game):
         self.kills = 0
         self.id = 0
         self.frame = 0
+        self.prev_pos = [self.x, self.y]
         self.is_bot = False
         super().__init__()
 
@@ -118,6 +119,7 @@ class AnimateEntity(Game):
         return nearest_player_coordinates
         
     def move(self):
+        self.prev_pos = [self.x, self.y]
         self.tile_x = round((self.x-self.x_offset)/Game.settings["game.tileSize"])
         self.tile_y = round((self.y-self.y_offset)/Game.settings["game.tileSize"])
         if Game.framerate > 0:
@@ -192,99 +194,6 @@ class Wall(InanimateEntity):
     def __str__(self):
         return "Wall<{}({}),{}({})>".format(self.x, self.tileX, self.y, self.tileY)
 
-
-# class Mimic(InanimateEntity):
-#     def __init__(self, tileX, tileY, offsetX, offsetY):
-#         super().__init__(tileX, tileY, offsetX, offsetY)
-#         self.has_bomb = True
-#         self.stop_propagation = {
-#             "UP": False,
-#             "DOWN": False,
-#             "LEFT": False,
-#             "RIGHT": False,
-#         }
-#         self.id = 999
-
-
-#     sprite_idle = scale(image.load("assets/images/enemies/mimic/1.png").convert(),
-#                         (InanimateEntity.tile_size, InanimateEntity.tile_size))
-#     sprite_aggrovated = scale(image.load("assets/images/enemies/mimic/2.png").convert(),
-#                               (InanimateEntity.tile_size, InanimateEntity.tile_size))
-#     sprite = sprite_idle
-#     explode_timer = None
-
-#     def __add_explosion_up(self, i):
-#         item = Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY - i)]
-#         if isinstance(item, (Wall, PowerUp)):
-#             self.stop_propagation["UP"] = True
-#         else:
-#             Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY - i)] = Empty(self.tileX, self.tileY - i, self.x_offset, self.y_offset)
-#             Game.entities.append(Explosion(self.tileX, self.tileY - i, self.x_offset, self.y_offset, self)) # Up
-
-#     def __add_explosion_down(self, i):
-#         item = Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY + i)]
-#         if isinstance(item, (Wall, PowerUp)):
-#             self.stop_propagation["DOWN"] = True
-#         else:
-#             Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY + i)] = Empty(self.tileX, self.tileY + i, self.x_offset, self.y_offset)
-#             Game.entities.append(Explosion(self.tileX, self.tileY + i, self.x_offset, self.y_offset, self)) # Down
-
-#     def __add_explosion_left(self, i):
-#         item = Game.map_item[Game.change2Dto1DIndex(self.tileX - i, self.tileY)]
-#         if isinstance(item, (Wall, PowerUp)):
-#             self.stop_propagation["LEFT"] = True
-#         else:
-#             Game.map_item[Game.change2Dto1DIndex(self.tileX - i, self.tileY)] = Empty(self.tileX - i, self.tileY, self.x_offset, self.y_offset)
-#             Game.entities.append(Explosion(self.tileX - i, self.tileY, self.x_offset, self.y_offset, self)) # Left
-
-#     def __add_explosion_right(self, i):
-#         item = Game.map_item[Game.change2Dto1DIndex(self.tileX + i, self.tileY)]
-#         if isinstance(item, (Wall, PowerUp)):
-#             self.stop_propagation["RIGHT"] = True
-#         else:
-#             Game.map_item[Game.change2Dto1DIndex(self.tileX + i, self.tileY)] = Empty(self.tileX + i, self.tileY, self.x_offset, self.y_offset)
-#             Game.entities.append(Explosion(self.tileX + i, self.tileY, self.x_offset, self.y_offset, self)) # Right
-
-#     def get_distance(self, pos):
-#         x, y = pos
-#         return math.sqrt((x - self.x)**2 + (y - self.y)**2)
-
-#     def get_nearest_player(self):
-#         nearest_player_distance = float("inf")
-#         for player in Game.players:
-#             player_distance = self.get_distance((player.x, player.y)) 
-#             if player_distance < nearest_player_distance:
-#                 nearest_player_distance = player_distance
-#             return nearest_player_distance
-
-#     def explode(self):
-#         Game.entities.append(Explosion(self.tileX, self.tileY, self.x_offset, self.y_offset, self))
-#         for i in range(1, 3):
-#             if not self.stop_propagation["UP"]:
-#                 self.__add_explosion_up(i)
-#             if not self.stop_propagation["DOWN"]:
-#                 self.__add_explosion_down(i)
-#             if not self.stop_propagation["LEFT"]:
-#                 self.__add_explosion_left(i)
-#             if not self.stop_propagation["RIGHT"]:
-#                 self.__add_explosion_right(i)
-#         Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY)] = Empty(self.tileX, self.tileY, self.x_offset, self.y_offset)
-#         self.stop_propagation["UP"] = False
-#         self.stop_propagation["DOWN"] = False
-#         self.stop_propagation["LEFT"] = False
-#         self.stop_propagation["RIGHT"] = False
-
-#     def update(self):
-#         if self.get_nearest_player() < 30:
-#             self.explode_timer = Stopwatch()
-#             self.sprite = Mimic.sprite_aggrovated
-#             if self.explode_timer.time_elapsed() > 2000:
-#                 self.explode()
-#             Game.surface.blit(self.sprite, (self.x, self.y))
-
-#     def __str__(self):
-#         return "Mimic<{}({}),{}({})>".format(self.x, self.tileX, self.y, self.tileY)
-
 class BombItem(InanimateEntity):
     ignited_sprite = scale(image.load("assets/images/ignited_bomb.png").convert(), (int(InanimateEntity.tile_size * 0.5), int(InanimateEntity.tile_size * 0.5)))
     sprite = scale(image.load("assets/images/regular_bomb.png").convert(), (int(InanimateEntity.tile_size * 0.5), int(InanimateEntity.tile_size * 0.5)))
@@ -347,6 +256,8 @@ class BombActive(InanimateEntity):
         if isinstance(item, (Wall, PowerUp)):
             self.stop_propagation["UP"] = True
         else:
+            if isinstance(Game.change2Dto1DIndex(self.tileX, self.tileY - i), Box):
+                Game.genomes[Game.players.index(self.player)].fitness += 10
             Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY - i)] = Empty(self.tileX, self.tileY - i, self.x_offset, self.y_offset)
             Game.entities.append(Explosion(self.tileX, self.tileY - i, self.x_offset, self.y_offset, self.player)) # Up
 
@@ -355,6 +266,8 @@ class BombActive(InanimateEntity):
         if isinstance(item, (Wall, PowerUp)):
             self.stop_propagation["DOWN"] = True
         else:
+            if isinstance(Game.change2Dto1DIndex(self.tileX, self.tileY - i), Box):
+                Game.genomes[Game.players.index(self.player)].fitness += 10
             Game.map_item[Game.change2Dto1DIndex(self.tileX, self.tileY + i)] = Empty(self.tileX, self.tileY + i, self.x_offset, self.y_offset)
             Game.entities.append(Explosion(self.tileX, self.tileY + i, self.x_offset, self.y_offset, self.player)) # Down
 
@@ -363,6 +276,8 @@ class BombActive(InanimateEntity):
         if isinstance(item, (Wall, PowerUp)):
             self.stop_propagation["LEFT"] = True
         else:
+            if isinstance(Game.change2Dto1DIndex(self.tileX, self.tileY - i), Box):
+                Game.genomes[Game.players.index(self.player)].fitness += 10
             Game.map_item[Game.change2Dto1DIndex(self.tileX - i, self.tileY)] = Empty(self.tileX - i, self.tileY, self.x_offset, self.y_offset)
             Game.entities.append(Explosion(self.tileX - i, self.tileY, self.x_offset, self.y_offset, self.player)) # Left
 
@@ -371,6 +286,8 @@ class BombActive(InanimateEntity):
         if isinstance(item, (Wall, PowerUp)):
             self.stop_propagation["RIGHT"] = True
         else:
+            if isinstance(Game.change2Dto1DIndex(self.tileX, self.tileY - i), Box):
+                Game.genomes[Game.players.index(self.player)].fitness += 10
             Game.map_item[Game.change2Dto1DIndex(self.tileX + i, self.tileY)] = Empty(self.tileX + i, self.tileY, self.x_offset, self.y_offset)
             Game.entities.append(Explosion(self.tileX + i, self.tileY, self.x_offset, self.y_offset, self.player)) # Right
 

@@ -31,6 +31,8 @@ class Game:
     entities = []
     players = []
     enemies = []
+    networks = []
+    genomes = []
 
     def __init__(self):
         Game.__setJSON()

@@ -1,6 +1,6 @@
 {
   "game.mapSize": 19,
   "game.tileSize": 25,
-  "game.resolution": [0, 0],
+  "game.resolution": [800, 700],
   "game.playerSpeed": 4.5
 }
